@@ -1,0 +1,194 @@
+version: '2.1'
+
+services:
+
+  redis:
+    container_name: redis
+    image: redis:3.2
+    ports:
+     - "6379:6379"
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  rabbitmq: 
+    image: rabbitmq 
+    build: ./queue 
+    ports: 
+        - "15672:15672" 
+        - "5672:5672" 
+    restart: always
+
+  users-service-db:
+    container_name: users-service-db
+    build: ./UsersService/db
+    ports:
+      - 5436:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  usersservice:
+    image: usersservice
+    build: ./UsersService
+    environment:
+      - APP_RD_ADDRESS=redis:6379
+      - APP_RD_AUTH=password
+      - APP_RD_DBNAME=0
+      - APP_SETTINGS=project.config.DevelopmentConfig
+      - DATABASE_URL=postgres://postgres:postgres@users-service-db:5432/users_prod?sslmode=disable
+      - DATABASE_DEV_URL=postgres://postgres:postgres@users-service-db:5432/users_dev?sslmode=disable
+      - DATABASE_TEST_URL=postgres://postgres:postgres@users-service-db:5432/users_test?sslmode=disable
+    depends_on:
+      users-service-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    links:
+      - users-service-db
+      - redis
+    restart: always
+
+  querydb_politics: 
+    image: querydb_politics 
+    build: ./PoliticsNewsService/query_db/ 
+    ports: 
+      - "5435:5432" 
+    restart: always 
+
+  commanddb_politics: 
+    image: commanddb_politics 
+    build: ./PoliticsNewsService/command_db/ 
+    ports: 
+      - "27018:27017" 
+    healthcheck: 
+      test: exit 0 
+    restart: always
+
+  politics_news_service: 
+    image: politics_news_service 
+    build: ./PoliticsNewsService 
+    volumes: 
+      - './PoliticsNewsService:/app' 
+    environment: 
+      - QUERYBD_HOST=mongodb://querydb_politics:27018/ 
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq 
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_politics:5432/news_prod?sslmode=disable 
+      - COMMANDDB_DEV_HOST=postgresql://postgres:postgres@commanddb_politics:5432/news_dev?sslmode=disable 
+      - COMMANDDB_TEST_HOST=postgresql://postgres:postgres@commanddb_politics:5432/news_test?sslmode=disable 
+    depends_on: 
+      - querydb_politics 
+      - commanddb_politics 
+      - rabbitmq 
+    links: 
+      - querydb_politics 
+      - commanddb_politics 
+      - rabbitmq
+    restart: always
+
+  querydb_sports: 
+    image: querydb_sports 
+    build: ./SportsNewsService/query_db/ 
+    ports: 
+      - "5434:5432" 
+    restart: always 
+
+  commanddb_sports: 
+    image: commanddb_sports 
+    build: ./SportsNewsService/command_db/ 
+    ports: 
+      - "27019:27017" 
+    healthcheck: 
+      test: exit 0 
+    restart: always
+ 
+  sports_news_service: 
+    image: sports_news_service 
+    build: ./SportsNewsService 
+    volumes: 
+      - './SportsNewsService:/app'
+    environment: 
+      - QUERYBD_HOST=mongodb://querydb_sports:27019/ 
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq 
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_sports:5432/news_prod?sslmode=disable 
+      - COMMANDDB_DEV_HOST=postgresql://postgres:postgres@commanddb_sports:5432/news_dev?sslmode=disable 
+      - COMMANDDB_TEST_HOST=postgresql://postgres:postgres@commanddb_sports:5432/news_test?sslmode=disable 
+    depends_on: 
+      - querydb_sports
+      - commanddb_sports
+      - rabbitmq 
+    links: 
+      - querydb_sports
+      - commanddb_sports
+      - rabbitmq
+    restart: always
+
+  querydb_famous: 
+    image: querydb_famous 
+    build: ./FamousNewsService/query_db/ 
+    ports: 
+      - "5433:5432" 
+    restart: always 
+
+  commanddb_famous: 
+    image: commanddb_famous 
+    build: ./FamousNewsService/command_db/ 
+    ports: 
+      - "27017:27017" 
+    healthcheck: 
+      test: exit 0 
+    restart: always 
+
+  famous_news_service: 
+    image: famous_news_service 
+    build: ./FamousNewsService 
+    volumes: 
+      - './FamousNewsService:/app' 
+    environment: 
+      - QUERYBD_HOST=mongodb://querydb_famous:27017/ 
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq 
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_famous:5432/news_prod?sslmode=disable 
+      - COMMANDDB_DEV_HOST=postgresql://postgres:postgres@commanddb_famous:5432/news_dev?sslmode=disable 
+      - COMMANDDB_TEST_HOST=postgresql://postgres:postgres@commanddb_famous:5432/news_test?sslmode=disable 
+    depends_on: 
+      - querydb_famous 
+      - commanddb_famous 
+      - rabbitmq 
+    links: 
+      - querydb_famous 
+      - commanddb_famous 
+      - rabbitmq
+    restart: always
+
+  orchestrator_news_service: 
+    image: orchestrator_news_service 
+    build: ./NewsOrchestrator 
+    volumes: 
+      - './NewsOrchestrator:/app' 
+    environment: 
+      - APP_SETTINGS=config.DevelopmentConfig 
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq 
+    depends_on: 
+      - famous_news_service 
+      - politics_news_service 
+      - sports_news_service 
+      - rabbitmq 
+    links: 
+      - famous_news_service 
+      - politics_news_service 
+      - sports_news_service 
+      - rabbitmq
+    restart: always
+
+  proxy:
+    container_name: userservice_loadbalance
+    build: ./nginx
+    ports:
+      - "80:80"
+    links:
+      - usersservice
+      - orchestrator_news_service
+    restart: always
