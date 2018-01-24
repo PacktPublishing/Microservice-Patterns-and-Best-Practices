@@ -1,0 +1,274 @@
+version: '3'
+
+services:
+
+  rabbitmq:
+    image: rabbitmq
+    build: ./queue
+    ports:
+        - "15672:15672"
+        - "5672:5672"
+    restart: always
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # Users service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  users_service_db:
+    build: ./UsersService/db
+    ports:
+      - 5432:5432  # expose ports - HOST:CONTAINER
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  users_queue:
+    image: redis
+    ports:
+     - "6379:6379"
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  users_service:
+    image: users_service
+    build: ./UsersService
+    environment:
+      - APP_RD_ADDRESS=users_queue:6379
+      - APP_RD_AUTH=password
+      - APP_RD_DBNAME=0
+      - APP_SETTINGS=project.config.DevelopmentConfig
+      - DATABASE_URL=postgresql://postgres:postgres@users_service_db:5432/users_dev?sslmode=disable
+    depends_on:
+      - users_service_db
+      - users_queue
+    links:
+      - users_service_db
+      - users_queue
+    restart: always
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # News Orchestrator service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  orcherstrator_news_service:
+    image: orcherstrator_news_service
+    build: ./NewsOrchestrator
+    volumes:
+      - './NewsOrchestrator:/app'
+    environment:
+      - APP_SETTINGS=config.DevelopmentConfig
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq
+    links:
+      - famous_news_service
+      - politics_news_service
+      - sports_news_service
+      - rabbitmq
+    restart: always
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # Famous service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  querydb_famous:
+    image: querydb_famous
+    build: ./FamousNewsService/query_db/
+    ports:
+      - "5433:5432"
+    restart: always
+
+  commanddb_famous:
+    image: commanddb_famous
+    build: ./FamousNewsService/command_db/
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  queue_famous:
+    image: rabbitmq
+    build: ./queue
+    ports:
+        - "15673:15672"
+        - "5673:5672"
+    restart: always
+
+  famous_news_service:
+    image: famous_news_service
+    build: ./FamousNewsService
+    volumes:
+      - './FamousNewsService:/app'
+    environment:
+      - QUERYBD_HOST=mongodb://querydb_famous:27017/
+      - QUEUE_HOST=amqp://guest:guest@queue_famous
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_famous:5432/news_dev?sslmode=disable
+    depends_on:
+      - querydb_famous
+      - commanddb_famous
+      - queue_famous
+    links:
+      - querydb_famous
+      - commanddb_famous
+      - queue_famous
+    restart: always
+
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # Politics service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  querydb_politics:
+    image: querydb_politics
+    build: ./PoliticsNewsService/query_db/
+    ports:
+      - "5434:5432"
+    restart: always
+
+  commanddb_politics:
+    image: commanddb_politics
+    build: ./PoliticsNewsService/command_db/
+    ports:
+      - "27018:27017"
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  queue_politics:
+    image: rabbitmq
+    build: ./queue
+    ports:
+        - "15674:15672"
+        - "5674:5672"
+    restart: always
+
+  politics_news_service:
+    image: politics_news_service
+    build: ./PoliticsNewsService
+    volumes:
+      - './PoliticsNewsService:/app'
+    environment:
+      - QUERYBD_HOST=mongodb://querydb_politics:27017/
+      - QUEUE_HOST=amqp://guest:guest@queue_politics
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_politics:5432/news_dev?sslmode=disable
+    depends_on:
+      - querydb_politics
+      - commanddb_politics
+      - queue_politics
+    links:
+      - querydb_politics
+      - commanddb_politics
+      - queue_politics
+    restart: always
+
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # Sports service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  querydb_sports:
+    image: querydb_sports
+    build: ./SportsNewsService/query_db/
+    ports:
+      - "5435:5432"
+    restart: always
+
+  commanddb_sports:
+    image: commanddb_sports
+    build: ./SportsNewsService/command_db/
+    ports:
+      - "27019:27017"
+    healthcheck:
+      test: exit 0
+    restart: always
+
+  queue_sports:
+    image: rabbitmq
+    build: ./queue
+    ports:
+        - "15675:15672"
+        - "5675:5672"
+    restart: always
+
+  sports_news_service:
+    image: sports_news_service
+    build: ./SportsNewsService
+    volumes:
+      - './SportsNewsService:/app'
+    environment:
+      - QUERYBD_HOST=mongodb://querydb_sports:27017/
+      - QUEUE_HOST=amqp://guest:guest@queue_sports
+      - COMMANDDB_HOST=postgresql://postgres:postgres@commanddb_sports:5432/news_dev?sslmode=disable
+    depends_on:
+      - querydb_sports
+      - commanddb_sports
+      - queue_sports
+    links:
+      - querydb_sports
+      - commanddb_sports
+      - queue_sports
+    restart: always
+
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # Recommendation service configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  recommendation_db:
+    image: neo4j:latest
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: "none"
+    restart: always
+
+  recommendation_service:
+    image: recommendation_service
+    build: ./RecommendationService
+    volumes:
+      - './RecommendationService:/app'
+    environment:
+      - QUEUE_HOST=amqp://guest:guest@rabbitmq
+      - DATABASE_URL=http://recommendation_db:7474/db/data
+      - USER_SERVICE_HOST=users_service:50051
+    depends_on:
+      - recommendation_db
+      - rabbitmq
+      - users_service
+    links:
+      - recommendation_db
+      - rabbitmq
+      - users_service
+    restart: always
+
+  # ----------------------------------------
+  # ----------------------------------------
+  # NGINX configuration
+  # ----------------------------------------
+  # ----------------------------------------
+
+  loadbalance:
+    build: ./nginx
+    ports:
+      - "80:80"
+    links:
+      - users_service
+      - orcherstrator_news_service
+      - recommendation_service
+    restart: always
