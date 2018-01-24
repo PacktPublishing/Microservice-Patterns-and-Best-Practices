@@ -1,0 +1,4 @@
+pytest
+nameko
+py2neo
+requests
