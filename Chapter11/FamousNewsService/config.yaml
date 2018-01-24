@@ -1,0 +1,13 @@
+AMQP_URI: 'amqp://guest:guest@rabbitmq'
+
+DB_URIS:
+    "command_famous:Base": ${COMMANDDB_HOST}
+
+LOGGING:
+    version: 1
+    handlers:
+        console:
+            class: logging.StreamHandler
+    root:
+        level: DEBUG
+        handlers: [console]

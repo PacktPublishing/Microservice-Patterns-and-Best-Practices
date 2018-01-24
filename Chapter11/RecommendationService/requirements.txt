@@ -1,0 +1,4 @@
+pytest
+nameko
+py2neo
+grpcio==1.7.3
